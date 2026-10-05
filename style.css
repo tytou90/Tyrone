@@ -1,0 +1,198 @@
+/* ============================= */
+/*        STYLE DE TYRONE        */
+/* ============================= */
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background: #02062E;
+    color: white;
+
+    min-height: 100vh;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+
+/* ============================= */
+/*          CONTENEUR            */
+/* ============================= */
+
+.container {
+    width: 100%;
+    min-height: 100vh;
+
+    display: flex;
+    flex-direction: column;
+}
+
+
+/* ============================= */
+/*            HEADER             */
+/* ============================= */
+
+header {
+    text-align: center;
+    padding: 45px;
+
+    background: #000000;
+
+    margin-bottom: 250px;
+}
+
+header h1 {
+    font-size: 24px;
+    margin-bottom: 5px;
+}
+
+header p {
+    color: #FFFCFC;
+}
+
+
+/* ============================= */
+/*        CONVERSATION           */
+/* ============================= */
+
+#conversation {
+    flex: 1;
+    height: 400px;
+    padding: 25px;
+
+    overflow-y: auto;
+
+    display: flex;
+    flex-direction: column;
+    justify-content:: flex-end;
+}
+
+
+/* Messages */
+
+.message {
+    max-width: 75%;
+
+    padding: 14px 18px;
+
+    margin-bottom: 15px;
+
+    border-radius: 18px;
+
+    line-height: 1.5;
+}
+
+
+/* Tyrone */
+
+.message.tyrone {
+    background: #252f49;
+
+    margin-right: auto;
+
+    border-bottom-left-radius: 5px;
+}
+
+
+/* Utilisateur */
+
+.message.utilisateur {
+    background: #2563eb;
+
+    margin-left: auto;
+
+    border-bottom-right-radius: 5px;
+}
+
+
+/* ============================= */
+/*       ZONE DE MESSAGE         */
+/* ============================= */
+
+#zone-message {
+    display: flex;
+
+    gap: 10px;
+
+    padding: 15px;
+
+    background: #11182b;
+
+    border-top: 1px solid #29324d;
+}
+
+
+/* Champ de texte */
+
+#message {
+    flex: 1;
+
+    padding: 14px 18px;
+
+    border: none;
+
+    border-radius: 15px;
+
+    outline: none;
+
+    background: #252f49;
+
+    color: white;
+
+    font-size: 16px;
+}
+
+#message::placeholder {
+    color: #8b95ad;
+}
+
+
+/* ============================= */
+/*           BOUTONS             */
+/* ============================= */
+
+button {
+    width: 50px;
+    height: 50px;
+
+    border: none;
+
+    border-radius: 15px;
+
+    cursor: pointer;
+
+    font-size: 20px;
+
+    transition: 0.2s;
+}
+
+
+/* Micro */
+
+#micro {
+    background: #252f49;
+
+    color: white;
+}
+
+
+/* Envoyer */
+
+#envoyer {
+    background: #2563eb;
+
+    color: white;
+}
+
+
+/* Animation au survol */
+
+button:hover {
+    transform: scale(1.05);
+}
