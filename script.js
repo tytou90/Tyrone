@@ -683,56 +683,73 @@ function reponseTyrone(message) {
 // ENVOI DU MESSAGE
 // ==================================================
 
-function envoyerMessage() {
 
-    const texte =
-        messageInput.value.trim();
+async function envoyerMessage() {
+    const texte = messageInput.value.trim();
 
-    if (!texte) {
-        return;
-    }
+    if (!texte) return;
 
+    // Afficher le message envoyé
+    ajouterMessage(texte, "utilisateur");
 
-    // Afficher le message utilisateur
-    ajouterMessage(
-        texte,
-        "utilisateur"
-    );
-
-
-    // Ajouter à l'historique
     historique.push({
         texte: texte,
         auteur: "utilisateur"
     });
 
+    sauvegarder();
+    messageInput.value = "";
+    boutonEnvoyer.disabled = true;
 
-    // Générer la réponse
-    const reponse =
-        reponseTyrone(texte);
-
-
-    // Petit délai pour donner un effet naturel
-    setTimeout(() => {
-
-        ajouterMessage(
-            reponse,
-            "tyrone"
+    try {
+        const response = await fetch(
+            "https://tyrone.tyt-friot.workers.dev/",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    message: texte
+                })
+            }
         );
 
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(
+                data.error || "Erreur du serveur"
+            );
+        }
+
+        if (!data.reply) {
+            throw new Error("Réponse vide du serveur");
+        }
+
+        ajouterMessage(data.reply, "tyrone");
+
         historique.push({
-            texte: reponse,
+            texte: data.reply,
             auteur: "tyrone"
         });
 
         sauvegarder();
 
-    }, 300);
+    } catch (error) {
+        console.error("Erreur Tyrone :", error);
 
+        ajouterMessage(
+            "Je n'arrive pas à contacter mon intelligence artificielle. Vérifie que mon serveur est disponible.",
+            "tyrone"
+        );
 
-    // Vider la zone de saisie
-    messageInput.value = "";
+    } finally {
+        boutonEnvoyer.disabled = false;
+        messageInput.focus();
+    }
 }
+
 
 
 // ==================================================
