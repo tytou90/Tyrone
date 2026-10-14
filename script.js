@@ -1,49 +1,73 @@
+
+"use strict";
+
+// =============================================
+// TYRONE — ASSISTANT PERSONNEL
+// Connexion à Cloudflare Workers AI
+// =============================================
+
 const messageInput = document.getElementById("message");
 const boutonEnvoyer = document.getElementById("envoyer");
 const conversation = document.getElementById("conversation");
 
+const WORKER_URL =
+    "https://tyrone.tyt-friot.workers.dev/";
 
-// ==================================================
-// MÉMOIRE
-// ==================================================
+const MAX_HISTORY_MESSAGES = 12;
+const MAX_MESSAGE_LENGTH = 2000;
 
-let memoire = JSON.parse(
-    localStorage.getItem("tyroneMemoire")
-) || {
-    prenom: null,
-    nom: null,
-    age: null,
-    sujet: null
-};
+let historique = chargerDepuisStockage(
+    "tyroneHistorique",
+    []
+);
 
-let historique = JSON.parse(
-    localStorage.getItem("tyroneHistorique")
-) || [];
+let envoiEnCours = false;
 
 
-// ==================================================
-// SAUVEGARDE
-// ==================================================
+// =============================================
+// MÉMOIRE LOCALE
+// =============================================
 
-function sauvegarder() {
-    localStorage.setItem(
-        "tyroneMemoire",
-        JSON.stringify(memoire)
-    );
+function chargerDepuisStockage(cle, valeurParDefaut) {
+    try {
+        const contenu = localStorage.getItem(cle);
 
-    localStorage.setItem(
-        "tyroneHistorique",
-        JSON.stringify(historique)
-    );
+        return contenu
+            ? JSON.parse(contenu)
+            : valeurParDefaut;
+
+    } catch (error) {
+        console.warn(
+            `Impossible de lire ${cle} :`,
+            error
+        );
+
+        return valeurParDefaut;
+    }
 }
 
 
-// ==================================================
-// AFFICHAGE
-// ==================================================
+function sauvegarder() {
+    try {
+        localStorage.setItem(
+            "tyroneHistorique",
+            JSON.stringify(historique)
+        );
+
+    } catch (error) {
+        console.warn(
+            "Impossible de sauvegarder l'historique :",
+            error
+        );
+    }
+}
+
+
+// =============================================
+// AFFICHAGE DES MESSAGES
+// =============================================
 
 function ajouterMessage(texte, auteur) {
-
     const message = document.createElement("div");
 
     message.className = `message ${auteur}`;
@@ -53,708 +77,208 @@ function ajouterMessage(texte, auteur) {
 
     conversation.scrollTop =
         conversation.scrollHeight;
+
+    return message;
 }
+
 
 function chargerHistorique() {
+    // Empêche de charger deux fois le même historique.
+    if (
+        conversation.dataset.historiqueCharge === "oui"
+    ) {
+        return;
+    }
+
+    conversation.dataset.historiqueCharge = "oui";
 
     historique.forEach(message => {
-        ajouterMessage(
-            message.texte,
-            message.auteur
-        );
+        if (
+            message &&
+            typeof message.texte === "string" &&
+            (
+                message.auteur === "utilisateur" ||
+                message.auteur === "tyrone"
+            )
+        ) {
+            ajouterMessage(
+                message.texte,
+                message.auteur
+            );
+        }
     });
 }
 
 
-// ==================================================
-// NORMALISATION DU TEXTE
-// ==================================================
+// =============================================
+// ÉTAT DE L'INTERFACE
+// =============================================
 
-function normaliser(texte) {
+function definirEnvoiEnCours(enCours) {
+    envoiEnCours = enCours;
 
-    return texte
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[’']/g, " ")
-        .replace(/[?!.,;:"]/g, "")
-        .replace(/\s+/g, " ")
-        .trim();
+    boutonEnvoyer.disabled = enCours;
+    messageInput.disabled = enCours;
+
+    boutonEnvoyer.textContent =
+        enCours ? "…" : "➤";
 }
 
 
-// ==================================================
-// DISTANCE ENTRE LES MOTS
-// ==================================================
-
-function distance(a, b) {
-
-    const matrice = Array.from(
-        { length: b.length + 1 },
-        (_, i) => [i]
-    );
-
-    for (let j = 1; j <= a.length; j++) {
-        matrice[0][j] = j;
-    }
-
-    for (let i = 1; i <= b.length; i++) {
-
-        for (let j = 1; j <= a.length; j++) {
-
-            matrice[i][j] =
-                b[i - 1] === a[j - 1]
-                    ? matrice[i - 1][j - 1]
-                    : Math.min(
-                        matrice[i - 1][j - 1] + 1,
-                        matrice[i][j - 1] + 1,
-                        matrice[i - 1][j] + 1
-                    );
-        }
-    }
-
-    return matrice[b.length][a.length];
-}
-
-
-// ==================================================
-// MOTS QUE TYRONE CONNAÎT
-// ==================================================
-
-const motsConnus = [
-    "heure",
-    "horloge",
-    "temps",
-    "actuelle",
-
-    "date",
-    "jour",
-    "aujourd",
-    "aujourdhui",
-
-    "salut",
-    "bonjour",
-    "hello",
-    "coucou",
-
-    "merci",
-
-    "aide",
-    "aider",
-
-    "aurevoir",
-    "bientot",
-    "bye",
-
-    "presente",
-    "parle",
-
-    "connait",
-    "connais",
-
-    "donne",
-    "quelle",
-
-    "peux",
-    "peut",
-
-    "prenom",
-    "comment",
-    "appelle",
-    "mappelle",
-
-    "calcul",
-    "calcule",
-    "combien",
-    "font",
-
-    "fois",
-    "moins",
-    "plus",
-    "divise",
-    "multiplie"
-];
-
-
-// ==================================================
-// CORRECTION DES FAUTES
-// ==================================================
-
-function corriger(texte) {
-
-    return texte.split(" ").map(mot => {
-
-        // On ne touche pas aux nombres
-        if (/^[0-9]+$/.test(mot)) {
-            return mot;
-        }
-
-        // On évite de modifier les mots très courts
-        if (mot.length < 3) {
-            return mot;
-        }
-
-        let meilleur = mot;
-        let meilleureDistance = Infinity;
-
-        for (const connu of motsConnus) {
-
-            if (connu.length < 3) {
-                continue;
-            }
-
-            const d = distance(mot, connu);
-
-            if (d < meilleureDistance) {
-                meilleureDistance = d;
-                meilleur = connu;
-            }
-        }
-
-        // Mots longs : jusqu'à 2 fautes
-        // Mots courts : 1 seule faute
-        const seuil =
-            mot.length >= 6 ? 2 : 1;
-
-        return meilleureDistance <= seuil
-            ? meilleur
-            : mot;
-
-    }).join(" ");
-}
-
-
-// ==================================================
-// OUTILS
-// ==================================================
-
-function contient(texte, mots) {
-
-    return mots.some(
-        mot => texte.includes(mot)
-    );
-}
-
-
-// ==================================================
-// MÉMOIRE DU PRÉNOM
-// ==================================================
-
-function gererPrenom(texte) {
-
-    const match = texte.match(
-        /je (?:m appelle|mappelle) ([a-zà-ÿ-]+)/
-    );
-
-    if (match) {
-
-        memoire.prenom = match[1];
-
-        sauvegarder();
-
-        return (
-            "D'accord, je retiens que tu t'appelles " +
-            memoire.prenom +
-            "."
-        );
-    }
-
-    if (
-        texte.includes("comment je m appelle") ||
-        texte.includes("comment je mappelle") ||
-        texte.includes("quel est mon prenom") ||
-        texte.includes("tu connais mon prenom")
-    ) {
-
-        if (memoire.prenom) {
-
-            return (
-                "Tu t'appelles " +
-                memoire.prenom +
-                "."
-            );
-        }
-
-        return "Je ne connais pas encore ton prénom.";
-    }
-
-    return null;
-}
-
-
-// ==================================================
-// CALCULATRICE
-// ==================================================
-
-function calculer(expression) {
-
-    expression = expression
-        .replace(/multiplie par/g, "*")
-        .replace(/divise par/g, "/")
-        .replace(/plus/g, "+")
-        .replace(/moins/g, "-")
-        .replace(/fois/g, "*");
-
-    // Autorise uniquement les caractères mathématiques
-    if (!/^[0-9+\-*/().\s]+$/.test(expression)) {
-        return null;
-    }
-
-    try {
-
-        const resultat = Function(
-            `"use strict"; return (${expression})`
-        )();
-
-        return Number.isFinite(resultat)
-            ? resultat
-            : null;
-
-    } catch {
-
-        return null;
-    }
-}
-
-
-function trouverCalcul(texte) {
-
-    const match = texte.match(
-        /(?:combien font|combien fait|calcule|calcul|fais le calcul)\s+(.+)/
-    );
-
-    if (!match) {
-        return null;
-    }
-
-    const resultat = calculer(
-        match[1]
-    );
-
-    if (resultat === null) {
-        return null;
-    }
-
-    return (
-        "Le résultat est " +
-        resultat +
-        "."
-    );
-}
-
-
-// ==================================================
-// DATE / HEURE
-// ==================================================
-
-function obtenirHeure() {
-
-    return (
-        "Il est " +
-        new Date().toLocaleTimeString(
-            "fr-FR",
-            {
-                hour: "2-digit",
-                minute: "2-digit"
-            }
-        ) +
-        "."
-    );
-}
-
-
-function obtenirDate() {
-
-    return (
-        "Nous sommes le " +
-        new Date().toLocaleDateString(
-            "fr-FR",
-            {
-                weekday: "long",
-                day: "numeric",
-                month: "long",
-                year: "numeric"
-            }
-        ) +
-        "."
-    );
-}
-
-
-// ==================================================
-// DÉTECTION DES INTENTIONS
-// ==================================================
-
-function detecterIntention(texte) {
-
-    if (
-        contient(texte, [
-            "heure",
-            "horloge",
-            "temps",
-            "actuelle"
-        ])
-    ) {
-        return "heure";
-    }
-
-
-    if (
-        contient(texte, [
-            "date",
-            "jour",
-            "aujourd",
-            "quel jour"
-        ])
-    ) {
-        return "date";
-    }
-
-
-    if (
-        contient(texte, [
-            "qui es tu",
-            "qui tu es",
-            "tu es qui",
-            "presente toi",
-            "parle moi de toi"
-        ])
-    ) {
-        return "presentation";
-    }
-
-
-    if (
-        contient(texte, [
-            "salut",
-            "bonjour",
-            "hello",
-            "hey",
-            "coucou"
-        ])
-    ) {
-        return "salutation";
-    }
-
-
-    if (
-        contient(texte, [
-            "merci",
-            "je te remercie"
-        ])
-    ) {
-        return "merci";
-    }
-
-
-    if (
-        contient(texte, [
-            "aide",
-            "aider",
-            "aide moi"
-        ])
-    ) {
-        return "aide";
-    }
-
-
-    if (
-        contient(texte, [
-            "au revoir",
-            "a plus",
-            "a bientot",
-            "bye"
-        ])
-    ) {
-        return "aurevoir";
-    }
-
-
-    return "inconnu";
-}
-
-
-// ==================================================
-// ANALYSE DU CONTEXTE
-// ==================================================
-
-function analyserContexte(texte) {
-
-    if (
-        contient(texte, [
-            "math",
-            "mathematique",
-            "equation",
-            "calcul",
-            "derivee",
-            "integrale",
-            "probabilite"
-        ])
-    ) {
-
-        memoire.sujet = "mathématiques";
-        sauvegarder();
-
-    } else if (
-        contient(texte, [
-            "code",
-            "python",
-            "javascript",
-            "html",
-            "css",
-            "programmation"
-        ])
-    ) {
-
-        memoire.sujet = "programmation";
-        sauvegarder();
-
-    } else if (
-        contient(texte, [
-            "tyrone",
-            "assistant",
-            "ia"
-        ])
-    ) {
-
-        memoire.sujet = "Tyrone";
-        sauvegarder();
-    }
-}
-
-
-// ==================================================
-// QUESTIONS SUR LE CONTEXTE
-// ==================================================
-
-function questionContexte(texte) {
-
-    if (
-        contient(texte, [
-            "de quoi on parle",
-            "de quoi parlons nous",
-            "quel est le sujet",
-            "on parlait de quoi"
-        ])
-    ) {
-
-        if (memoire.sujet) {
-
-            return (
-                "On parle de " +
-                memoire.sujet +
-                "."
-            );
-        }
-
-        return (
-            "On n'a pas encore défini " +
-            "de sujet précis."
-        );
-    }
-
-
-    if (
-        contient(texte, [
-            "tu te souviens",
-            "tu te rappelles"
-        ])
-    ) {
-
-        if (memoire.prenom) {
-
-            return (
-                "Oui. Je me souviens que " +
-                "tu t'appelles " +
-                memoire.prenom +
-                "."
-            );
-        }
-
-        return (
-            "Je me souviens seulement de ce " +
-            "que j'ai enregistré pour l'instant."
-        );
-    }
-
-    return null;
-}
-
-
-// ==================================================
-// RÉPONSE DE TYRONE
-// ==================================================
-
-function reponseTyrone(message) {
-
-    // Nettoyage et correction
-    const texte = corriger(
-        normaliser(message)
-    );
-
-
-    // Analyse du contexte
-    analyserContexte(texte);
-
-
-    // Calcul
-    const calcul =
-        trouverCalcul(texte);
-
-    if (calcul) {
-        return calcul;
-    }
-
-
-    // Prénom
-    const prenom =
-        gererPrenom(texte);
-
-    if (prenom) {
-        return prenom;
-    }
-
-
-    // Contexte
-    const contexte =
-        questionContexte(texte);
-
-    if (contexte) {
-        return contexte;
-    }
-
-
-    // Intentions
-    switch (
-        detecterIntention(texte)
-    ) {
-
-        case "heure":
-            return obtenirHeure();
-
-
-        case "date":
-            return obtenirDate();
-
-
-        case "presentation":
-            return (
-                "Je suis Tyrone, ton assistant " +
-                "personnel. Je suis encore en " +
-                "développement, mais je vais " +
-                "progressivement apprendre à " +
-                "faire de plus en plus de choses."
-            );
-
-
-        case "salutation":
-
-            return memoire.prenom
-                ? `Salut ${memoire.prenom} !`
-                : "Salut !";
-
-
-        case "merci":
-            return "Avec plaisir !";
-
-
-        case "aide":
-            return (
-                "Bien sûr. Dis-moi ce que tu " +
-                "veux faire et je vais essayer " +
-                "de t'aider."
-            );
-
-
-        case "aurevoir":
-            return "À plus !";
-
-
-        default:
-            return (
-                "Je n'ai pas encore appris à " +
-                "comprendre cette demande."
-            );
-    }
-}
-
-
-// ==================================================
-// ENVOI DU MESSAGE
-// ==================================================
-
-
-async function envoyerMessage() {
-    const texte = messageInput.value.trim();
-
-    if (!texte) return;
-
-    // Afficher le message envoyé
-    ajouterMessage(texte, "utilisateur");
-
+// =============================================
+// SAUVEGARDE DE L'HISTORIQUE
+// =============================================
+
+function ajouterAuContexte(auteur, texte) {
     historique.push({
-        texte: texte,
-        auteur: "utilisateur"
+        auteur,
+        texte
     });
+
+    // Limite la taille de l'historique enregistré.
+    if (historique.length > 100) {
+        historique = historique.slice(-100);
+    }
 
     sauvegarder();
-    messageInput.value = "";
-    boutonEnvoyer.disabled = true;
+}
 
-    try {
-        const response = await fetch(
-            "https://tyrone.tyt-friot.workers.dev/",
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    message: texte
-                })
-            }
-        );
 
-        const data = await response.json();
+// =============================================
+// ENVOI À L'INTELLIGENCE ARTIFICIELLE
+// =============================================
 
-        if (!response.ok) {
-            throw new Error(
-                data.error || "Erreur du serveur"
-            );
-        }
+async function envoyerMessage() {
+    if (envoiEnCours) {
+        return;
+    }
 
-        if (!data.reply) {
-            throw new Error("Réponse vide du serveur");
-        }
+    const texte = messageInput.value.trim();
 
-        ajouterMessage(data.reply, "tyrone");
+    if (!texte) {
+        return;
+    }
 
-        historique.push({
-            texte: data.reply,
-            auteur: "tyrone"
-        });
-
-        sauvegarder();
-
-    } catch (error) {
-        console.error("Erreur Tyrone :", error);
-
+    if (texte.length > MAX_MESSAGE_LENGTH) {
         ajouterMessage(
-            "Je n'arrive pas à contacter mon intelligence artificielle. Vérifie que mon serveur est disponible.",
+            "Ton message est trop long. " +
+            `La limite est de ${MAX_MESSAGE_LENGTH} caractères.`,
             "tyrone"
         );
 
+        return;
+    }
+
+    // Affiche et sauvegarde le message utilisateur.
+    ajouterMessage(texte, "utilisateur");
+
+    ajouterAuContexte(
+        "utilisateur",
+        texte
+    );
+
+    messageInput.value = "";
+
+    definirEnvoiEnCours(true);
+
+    const messageAttente = ajouterMessage(
+        "Je réfléchis…",
+        "tyrone"
+    );
+
+    try {
+        // Prépare les échanges précédents.
+        // Le message actuel est envoyé séparément.
+        const contexte = historique
+            .slice(0, -1)
+            .slice(-MAX_HISTORY_MESSAGES)
+            .map(element => ({
+                role:
+                    element.auteur === "utilisateur"
+                        ? "user"
+                        : "assistant",
+
+                content: element.texte
+            }));
+
+        const response = await fetch(WORKER_URL, {
+            method: "POST",
+
+            headers: {
+                "Content-Type": "application/json"
+            },
+
+            body: JSON.stringify({
+                message: texte,
+                history: contexte
+            })
+        });
+
+        let data;
+
+        try {
+            data = await response.json();
+
+        } catch {
+            throw new Error(
+                "Le serveur a renvoyé une réponse illisible."
+            );
+        }
+
+        if (!response.ok) {
+            throw new Error(
+                data && data.error
+                    ? data.error
+                    : `Erreur serveur (${response.status}).`
+            );
+        }
+
+        if (
+            !data ||
+            typeof data.reply !== "string" ||
+            !data.reply.trim()
+        ) {
+            throw new Error(
+                "Le serveur n'a pas renvoyé de réponse."
+            );
+        }
+
+        // Remplace le message d'attente par la réponse.
+        messageAttente.remove();
+
+        const reponse = data.reply.trim();
+
+        ajouterMessage(
+            reponse,
+            "tyrone"
+        );
+
+        ajouterAuContexte(
+            "tyrone",
+            reponse
+        );
+
+    } catch (error) {
+        console.error(
+            "Erreur de connexion à Tyrone AI :",
+            error
+        );
+
+        messageAttente.textContent =
+            "Je n'arrive pas à contacter mon IA. " +
+            "Vérifie le déploiement Cloudflare puis réessaie. " +
+            "Détail : " + error.message;
+
     } finally {
-        boutonEnvoyer.disabled = false;
+        definirEnvoiEnCours(false);
         messageInput.focus();
     }
 }
 
 
-
-// ==================================================
+// =============================================
 // ÉVÉNEMENTS
-// ==================================================
+// =============================================
 
 boutonEnvoyer.addEventListener(
     "click",
@@ -765,17 +289,19 @@ boutonEnvoyer.addEventListener(
 messageInput.addEventListener(
     "keydown",
     event => {
-
-        if (event.key === "Enter") {
+        if (
+            event.key === "Enter" &&
+            !event.shiftKey
+        ) {
+            event.preventDefault();
             envoyerMessage();
         }
-
     }
 );
 
 
-// ==================================================
+// =============================================
 // DÉMARRAGE
-// ==================================================
+// =============================================
 
 chargerHistorique();
